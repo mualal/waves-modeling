@@ -175,9 +175,10 @@ class LatticeLatticeStructure:
         c_1, c_2 = self.stiffnesses[0, 0], self.stiffnesses[0, -1]
         m_1, m_2 = self.masses[0, 0], self.masses[0, -1]
         d_1, d_2 = self.foundation_stiffnesses[0, 0], self.foundation_stiffnesses[0, -1]
-        arr = [(sin(cos(gamma) * var)) ** 2 + (sin(sin(gamma) * var)) ** 2 for var in np.arange(0, 2 * np.pi, 0.001)]
-        return np.sqrt(max((4 * c_1 * min(arr) + d_1) / m_1,
-                           (4 * c_2 * min(arr) + d_2) / m_2))
+        #lst = [(sin(cos(gamma) * var)) ** 2 + (sin(sin(gamma) * var)) ** 2 for var in np.arange(0, 2 * np.pi, 0.001)]
+        lst = [0]
+        return np.sqrt(max((4 * c_1 * min(lst) + d_1) / m_1,
+                           (4 * c_2 * min(lst) + d_2) / m_2))
 
     @property
     def omega_high(self):
@@ -185,9 +186,10 @@ class LatticeLatticeStructure:
         c_1, c_2 = self.stiffnesses[0, 0], self.stiffnesses[0, -1]
         m_1, m_2 = self.masses[0, 0], self.masses[0, -1]
         d_1, d_2 = self.foundation_stiffnesses[0, 0], self.foundation_stiffnesses[0, -1]
-        arr = [(sin(cos(gamma) * var)) ** 2 + (sin(sin(gamma) * var)) ** 2 for var in np.arange(0, 2 * np.pi, 0.001)]
-        return np.sqrt(min((4 * c_1 * max(arr) + d_1) / m_1,
-                           (4 * c_2 * max(arr) + d_2) / m_2))
+        #lst = [(sin(cos(gamma) * var)) ** 2 + (sin(sin(gamma) * var)) ** 2 for var in np.arange(0, 2 * np.pi, 0.001)]
+        lst = [1]
+        return np.sqrt(min((4 * c_1 * max(lst) + d_1) / m_1,
+                           (4 * c_2 * max(lst) + d_2) / m_2))
 
     @property
     def zeta(self):

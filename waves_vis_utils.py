@@ -47,7 +47,17 @@ def lattices_animation(structure: LatticeLatticeStructure,
     #        linestyle="dashed", color="orange", linewidth=1)
 
     def update(frame):
+        nonlocal cbar
+        cbar.remove()
+        ax.clear()
+        ax.plot([0] * structure.coords_y.shape[0], structure.coords_y[:, 0], linestyle="dashed", color="red",
+                linewidth=1)
+        plt.title(f"{title} {cbar_label}")
+        plt.xlabel(x_label)
+        plt.ylabel(y_label)
+        levels = np.linspace(cur_field_frames[frame].min(), cur_field_frames[frame].max(), 100)
         cf = ax.contourf(structure.coords_x, structure.coords_y, cur_field_frames[frame], levels=levels)
+        cbar = fig.colorbar(cf, ticks=np.linspace(0, cur_field_frames[frame].max(), 10), label=cbar_label, ax=ax)
         return cf,
 
     anim = animation.FuncAnimation(fig, update, frames=len(cur_field_frames))
@@ -72,6 +82,7 @@ def chains_animation(structure: ChainChainStructure,
     plt.grid()
 
     def update(frame):
+        ax.set_ylim((0.9 * min(cur_field_frames[frame]), 1.1 * max(cur_field_frames[frame])))
         line1.set_xdata(structure.coords)
         line1.set_ydata(cur_field_frames[frame])
         return line1,
