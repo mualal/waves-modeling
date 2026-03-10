@@ -20,7 +20,12 @@ def monitor_energy(structure: ChainChainStructure | LatticeLatticeStructure):
     plt.show()
 
 
-def lattices_animation(structure: LatticeLatticeStructure, field="disp_undim"):
+def lattices_animation(structure: LatticeLatticeStructure,
+                       field="energy_field_undim",
+                       title="Энергия",
+                       x_label="n",
+                       y_label="m",
+                       cbar_label=r"$2e_{n,m} \;/\; \left(m_1U_0^2\Omega^2\right)$"):
     plt.rcParams["animation.html"] = "jshtml"
     plt.rcParams['figure.dpi'] = 150
     plt.ioff()
@@ -28,12 +33,18 @@ def lattices_animation(structure: LatticeLatticeStructure, field="disp_undim"):
     cur_field_frames = getattr(structure, field + "_frames")
     fig, ax = plt.subplots()
     levels = np.linspace(cur_field_frames[0].min(), cur_field_frames[0].max(), 100)
+    #levels = np.linspace(0, 0.1, 100)
     ax.plot([0] * structure.coords_y.shape[0], structure.coords_y[:, 0], linestyle="dashed", color="red", linewidth=1)
     cf = ax.contourf(structure.coords_x, structure.coords_y, cur_field_frames[0], levels=levels)
-    cbar = fig.colorbar(cf)
-    plt.xlabel('n')
-    plt.ylabel('m')
+    cbar = fig.colorbar(cf, ticks=np.linspace(0, cur_field_frames[0].max(), 10), label=cbar_label, ax=ax)
+    plt.title(f"{title} {cbar_label}")
+    plt.xlabel(x_label)
+    plt.ylabel(y_label)
     ax.set_aspect('equal', adjustable='box')
+
+    # ax.plot(structure.coords_x[0][np.where(structure.coords_x[0] >= 0)],
+    #        np.add(np.tan(structure.zeta[0]) * structure.coords_x[0][np.where(structure.coords_x[0] >= 0)], -20),
+    #        linestyle="dashed", color="orange", linewidth=1)
 
     def update(frame):
         cf = ax.contourf(structure.coords_x, structure.coords_y, cur_field_frames[frame], levels=levels)
@@ -43,7 +54,11 @@ def lattices_animation(structure: LatticeLatticeStructure, field="disp_undim"):
     plt.show()
 
 
-def chains_animation(structure: ChainChainStructure, field="disp_undim"):
+def chains_animation(structure: ChainChainStructure,
+                     field="energy_field_undim",
+                     title="Энергия",
+                     x_label=r"$n$",
+                     y_label=r"$2e_n \;/\; \left(m_1U_0^2\Omega^2\right)$"):
     plt.rcParams["animation.html"] = "jshtml"
     plt.rcParams['figure.dpi'] = 150
     plt.ioff()
@@ -51,9 +66,9 @@ def chains_animation(structure: ChainChainStructure, field="disp_undim"):
     cur_field_frames = getattr(structure, field + "_frames")
     fig, ax = plt.subplots()
     line1 = ax.plot(structure.coords, cur_field_frames[0])[0]
-    plt.title("")
-    plt.xlabel("")
-    plt.ylabel("")
+    plt.title(title)
+    plt.xlabel(x_label)
+    plt.ylabel(y_label)
     plt.grid()
 
     def update(frame):

@@ -49,7 +49,7 @@ class ChainChainStructure:
         self.disp[np.where(self.indices >= -1)] = 0
         self.vel[np.where(self.indices >= -1)] = 0
 
-    def solve(self, dt, t_max, save_time):
+    def solve(self, dt, t_max, save_time, auto_stop=True):
         time_steps = np.arange(0, t_max, dt)
         for t in tqdm(time_steps):
             # leapfrog synchronized form
@@ -65,6 +65,11 @@ class ChainChainStructure:
             # save results
             if t % save_time == 0:
                 self.save_history(t)
+
+            if auto_stop:
+                interface_energy = getattr(self, "energy_interface_undim_frames", None)
+                if interface_energy and interface_energy[-1] < max(interface_energy) / 1e3:
+                    break
 
     @property
     def energy_field(self):
@@ -101,6 +106,10 @@ class ChainChainStructure:
     @property
     def energy_right_undim(self):
         return np.sum(self.energy_field_undim * (self.indices >= 0))
+
+    @property
+    def energy_interface_undim(self):
+        return np.sum(self.energy_field_undim * (self.indices == 0))
 
     @property
     def transmission_coeff_numerical(self):
@@ -141,7 +150,8 @@ class ChainChainStructure:
         return np.sqrt(min((4 * self.stiffnesses[0] + self.foundation_stiffnesses[0]) / self.masses[0],
                            (4 * self.stiffnesses[-1] + self.foundation_stiffnesses[-1]) / self.masses[-1]))
 
-    def plot_field(self, field="disp_undim", title="", x_label="", y_label=""):
+    def plot_field(self, field="energy_field_undim", title="Энергия",
+                   x_label=r"$n$", y_label=r"$2e_n \;/\; \left(m_1U_0^2\Omega^2\right)$"):
         plt.plot(self.coords, getattr(self, field))
         plt.title(title)
         plt.xlabel(x_label)
@@ -151,7 +161,8 @@ class ChainChainStructure:
 
     frames_containers = ["time_undim_frames", "disp_undim_frames", "vel_undim_frames", "energy_field_undim_frames",
                          "energy_both_undim_frames", "energy_left_undim_frames",
-                         "energy_right_undim_frames", "transmission_coeff_numerical_frames",
+                         "energy_right_undim_frames", "energy_interface_undim_frames",
+                         "transmission_coeff_numerical_frames",
                          "transmission_coeff_analytical_frames"]
     frames_container_names = list(map(lambda s: s.replace("_frames", ""), frames_containers))
 
@@ -166,11 +177,9 @@ class ChainChainStructure:
 if __name__ == "__main__":
     chain_chain = ChainChainStructure(m_1=0.5, m_2=1.0,
                                       c_1=0.1, c_2=0.1, c_12=0.1,
-                                      d_1=0.0, d_2=0.2,
+                                      d_1=0.0, d_2=0.0,
                                       cnt=301, a=1)
-    chain_chain.specify_initial_and_boundary(beta=0.035, n_0=-70, u_0=1, omega_undim=0.99)
-    chain_chain.plot_field(field="energy_field_undim", title="Энергия",
-                           x_label=r"$n$", y_label=r"$2e_n \;/\; \left(m_1U_0^2\Omega^2\right)$")
-    chain_chain.solve(dt=0.05, t_max=800, save_time=15)
-    chain_chain.plot_field(field="energy_field_undim", title="Энергия",
-                           x_label=r"$n$", y_label=r"$2e_n \;/\; \left(m_1U_0^2\Omega^2\right)$")
+    chain_chain.specify_initial_and_boundary(beta=0.035, n_0=-70, u_0=1, omega_undim=np.sqrt(0.5))
+    chain_chain.plot_field()
+    chain_chain.solve(dt=0.05, t_max=400, save_time=15, auto_stop=False)
+    chain_chain.plot_field()

@@ -19,6 +19,6 @@ if __name__ == "__main__":
                                               d_1=0.0, d_2=0.2,
                                               cnt_x=301, cnt_y=301, a=1)
     lattice_lattice.specify_initial_and_boundary(gamma=np.radians(0), beta_x=0.035, beta_y=0.035,
-                                                 n_0=-70, v_0=-35, u_0=1, omega_undim=np.sqrt(0.5))
+                                                 shift_x=-70, shift_y=-35, u_0=1, omega_undim=np.sqrt(0.5))
     lattice_lattice.solve(dt=0.05, t_max=400, save_time=15)
     monitor_energy(lattice_lattice)
