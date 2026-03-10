@@ -25,17 +25,28 @@ class LatticeLatticeStructure:
         self.disp = np.zeros(shape=(cnt_y, cnt_x))
         self.vel = np.zeros(shape=(cnt_y, cnt_x))
 
-    def specify_initial_and_boundary(self, gamma, beta_x, beta_y, n_0, v_0, u_0, omega):
+    def specify_initial_and_boundary(self, gamma, beta_x, beta_y, n_0, v_0, u_0, omega=None, omega_undim=None):
         setattr(self, "gamma", gamma)
+
+        if omega_undim is not None:
+            omega = np.sqrt(self.omega_low ** 2 + omega_undim ** 2 * (self.omega_high ** 2 - self.omega_low ** 2))
+
         setattr(self, "omega", omega)
         setattr(self, "u_0", u_0)
 
-        k_1 = fsolve(lambda k: self.masses[0, 0] * omega ** 2 - 4 * self.stiffnesses[0, 0] *
+        k_1 = fsolve(lambda k: self.masses[0, 0] * omega ** 2 - self.foundation_stiffnesses[0, 0] -
+                     4 * self.stiffnesses[0, 0] *
                      (sin(cos(gamma) * k * self.a / 2) ** 2 + sin(sin(gamma) * k * self.a / 2) ** 2), np.ones(1))[0]
-        g_1 = np.sqrt(self.stiffnesses / self.masses) * \
-            (self.a * cos(gamma) * cos(cos(gamma) * k_1 * self.a / 2) * sin(cos(gamma) * k_1 * self.a / 2) -
-             self.a * sin(gamma) * cos(sin(gamma) * k_1 * self.a / 2) * sin(sin(gamma) * k_1 * self.a / 2)) / \
-            np.sqrt((cos(sin(gamma) * k_1 * self.a / 2)) ** 2 + (sin(cos(gamma) * k_1 * self.a / 2)) ** 2)
+        g_1 = 4 * self.stiffnesses * \
+            (cos(gamma) * self.a / 2 * sin(k_1 * cos(gamma) * self.a / 2) * cos(k_1 * cos(gamma) * self.a / 2) +
+             sin(gamma) * self.a / 2 * sin(k_1 * sin(gamma) * self.a / 2) * cos(k_1 * sin(gamma) * self.a / 2)) / \
+            (self.masses * np.sqrt((4 * self.stiffnesses * (sin(k_1 * cos(gamma) * self.a / 2)) ** 2 +
+                                   4 * self.stiffnesses * (sin(k_1 * sin(gamma) * self.a / 2)) ** 2 +
+                                   self.foundation_stiffnesses) / self.masses))
+
+        setattr(self, "g_1", g_1)
+        print(self.omega_low)
+        print(self.omega_high)
 
         self.disp = u_0 * np.exp(-beta_x ** 2 / 2 * (self.coords_x * cos(gamma) + self.coords_y * sin(gamma) -
                                                      n_0 * cos(gamma) - v_0 * sin(gamma)) ** 2)
@@ -75,7 +86,7 @@ class LatticeLatticeStructure:
 
             # save results
             if t % save_time == 0:
-                self.save_history()
+                self.save_history(t)
             if auto_stop and len(getattr(self, "energy_right_sum_frames", [])) > 1:
                 e_left = getattr(self, "energy_left_undi_frames")
                 e_right = getattr(self, "energy_right_undi_frames")
@@ -88,7 +99,8 @@ class LatticeLatticeStructure:
             self.stiffnesses / 4 * ((np.roll(self.disp, -1, axis=1) - self.disp) ** 2 +
                                     (np.roll(self.disp, 1, axis=0) - self.disp) ** 2) + \
             np.roll(self.stiffnesses, 1, axis=1) / 4 * ((np.roll(self.disp, 1, axis=1) - self.disp) ** 2 +
-                                                        (np.roll(self.disp, -1, axis=0) - self.disp) ** 2)
+                                                        (np.roll(self.disp, -1, axis=0) - self.disp) ** 2) +\
+            self.foundation_stiffnesses / 2 * self.disp ** 2
         return e
 
     @property
@@ -159,9 +171,29 @@ class LatticeLatticeStructure:
 
         return trans_coeff
 
+    @property
+    def omega_low(self):
+        gamma = getattr(self, "gamma")
+        c_1, c_2 = self.stiffnesses[0, 0], self.stiffnesses[0, -1]
+        m_1, m_2 = self.masses[0, 0], self.masses[0, -1]
+        d_1, d_2 = self.foundation_stiffnesses[0, 0], self.foundation_stiffnesses[0, -1]
+        arr = [(sin(cos(gamma) * var)) ** 2 + (sin(sin(gamma) * var)) ** 2 for var in np.arange(0, 2 * np.pi, 0.001)]
+        return np.sqrt(max((4 * c_1 * min(arr) + d_1) / m_1,
+                           (4 * c_2 * min(arr) + d_2) / m_2))
+
+    @property
+    def omega_high(self):
+        gamma = getattr(self, "gamma")
+        c_1, c_2 = self.stiffnesses[0, 0], self.stiffnesses[0, -1]
+        m_1, m_2 = self.masses[0, 0], self.masses[0, -1]
+        d_1, d_2 = self.foundation_stiffnesses[0, 0], self.foundation_stiffnesses[0, -1]
+        arr = [(sin(cos(gamma) * var)) ** 2 + (sin(sin(gamma) * var)) ** 2 for var in np.arange(0, 2 * np.pi, 0.001)]
+        return np.sqrt(min((4 * c_1 * max(arr) + d_1) / m_1,
+                           (4 * c_2 * max(arr) + d_2) / m_2))
+
     def plot_field(self, field="disp_undim", title="", x_label="", y_label="", cbar_label=""):
         cur_field = getattr(self, field)
-        levels = np.linspace(getattr(self, field).min(), getattr(self, field).max(), 100)
+        levels = np.linspace(cur_field.min(), cur_field.max(), 100)
         fig, ax = plt.subplots()
         ax.plot([0] * self.coords_y.shape[0], self.coords_y[:, 0], linestyle="dashed", color="red", linewidth=1)
         cs = ax.contourf(self.coords_x, self.coords_y, cur_field, levels=levels)
@@ -174,13 +206,14 @@ class LatticeLatticeStructure:
         ax.set_aspect("equal", adjustable="box")
         plt.show()
 
-    frames_containers = ["disp_undim_frames", "vel_undim_frames", "energy_field_undim_frames",
+    frames_containers = ["time_undim_frames", "disp_undim_frames", "vel_undim_frames", "energy_field_undim_frames",
                          "energy_both_undim_frames", "energy_left_undim_frames",
                          "energy_right_undim_frames", "transmission_coeff_numerical_frames",
                          "transmission_coeff_analytical_frames"]
     frames_container_names = list(map(lambda s: s.replace("_frames", ""), frames_containers))
 
-    def save_history(self):
+    def save_history(self, t):
+        setattr(self, "time_undim", t * getattr(self, "g_1")[0, 0] / self.a)
         for i, frames_container in enumerate(self.frames_containers):
             if not hasattr(self, frames_container):
                 setattr(self, frames_container, [])
@@ -192,10 +225,10 @@ if __name__ == "__main__":
                                               c_1=0.1, c_2=0.1, c_12=0.1,
                                               d_1=0.0, d_2=0.2,
                                               cnt_x=301, cnt_y=301, a=1)
-    lattice_lattice.specify_initial_and_boundary(gamma=np.radians(0), beta_x=0.035, beta_y=0.035,
-                                                 n_0=-70, v_0=-35, u_0=1, omega=np.sqrt(0.4))
+    lattice_lattice.specify_initial_and_boundary(gamma=np.radians(5), beta_x=0.035, beta_y=0.035,
+                                                 n_0=-70, v_0=-35, u_0=1, omega=0.7)
     lattice_lattice.plot_field(field="energy_field_undim", title="Энергия",
                                x_label="n", y_label="m", cbar_label=r"$2e_{n,m} \;/\; \left(m_1U_0^2\Omega^2\right)$")
-    lattice_lattice.solve(dt=0.05, t_max=400, save_time=15)
+    lattice_lattice.solve(dt=0.05, t_max=800, save_time=15)
     lattice_lattice.plot_field(field="energy_field_undim", title="Энергия",
                                x_label="n", y_label="m", cbar_label=r"$2e_{n,m} \;/\; \left(m_1U_0^2\Omega^2\right)$")

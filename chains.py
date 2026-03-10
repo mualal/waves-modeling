@@ -20,7 +20,9 @@ class ChainChainStructure:
         self.disp = np.zeros(cnt)
         self.vel = np.zeros(cnt)
 
-    def specify_initial_and_boundary(self, beta, n_0, u_0, omega):
+    def specify_initial_and_boundary(self, beta, n_0, u_0, omega=None, omega_undim=None):
+        if omega_undim is not None:
+            omega = np.sqrt(self.omega_low ** 2 + omega_undim ** 2 * (self.omega_high ** 2 - self.omega_low ** 2))
         for i in (0, -1):
             omega_min = np.sqrt(self.foundation_stiffnesses[i] / self.masses[i])
             omega_max = np.sqrt((4 * self.stiffnesses[i] + self.foundation_stiffnesses[i]) / self.masses[i])
@@ -37,6 +39,8 @@ class ChainChainStructure:
         k_1 = np.arcsin(np.sqrt(self.masses * expr)) * 2 / self.a
         expr = ((4 * self.stiffnesses + self.foundation_stiffnesses) / self.masses - omega ** 2)
         g_1 = self.a / (2 * omega) * np.sqrt((omega ** 2 - self.foundation_stiffnesses / self.masses) * expr)
+
+        setattr(self, "g_1", g_1)
 
         self.disp = u_0 * np.exp(-beta ** 2 / 2 * (self.coords - n_0) ** 2) * np.sin(self.coords * k_1)
         self.vel = -u_0 * np.exp(-beta ** 2 / 2 * (self.coords - n_0) ** 2)
@@ -60,7 +64,7 @@ class ChainChainStructure:
 
             # save results
             if t % save_time == 0:
-                self.save_history()
+                self.save_history(t)
 
     @property
     def energy_field(self):
@@ -127,6 +131,16 @@ class ChainChainStructure:
 
         return trans_coeff
 
+    @property
+    def omega_low(self):
+        return np.sqrt(max(self.foundation_stiffnesses[0] / self.masses[0],
+                           self.foundation_stiffnesses[-1] / self.masses[-1]))
+
+    @property
+    def omega_high(self):
+        return np.sqrt(min((4 * self.stiffnesses[0] + self.foundation_stiffnesses[0]) / self.masses[0],
+                           (4 * self.stiffnesses[-1] + self.foundation_stiffnesses[-1]) / self.masses[-1]))
+
     def plot_field(self, field="disp_undim", title="", x_label="", y_label=""):
         plt.plot(self.coords, getattr(self, field))
         plt.title(title)
@@ -135,13 +149,14 @@ class ChainChainStructure:
         plt.grid()
         plt.show()
 
-    frames_containers = ["disp_undim_frames", "vel_undim_frames", "energy_field_undim_frames",
+    frames_containers = ["time_undim_frames", "disp_undim_frames", "vel_undim_frames", "energy_field_undim_frames",
                          "energy_both_undim_frames", "energy_left_undim_frames",
                          "energy_right_undim_frames", "transmission_coeff_numerical_frames",
                          "transmission_coeff_analytical_frames"]
     frames_container_names = list(map(lambda s: s.replace("_frames", ""), frames_containers))
 
-    def save_history(self):
+    def save_history(self, t):
+        setattr(self, "time_undim", t * getattr(self, "g_1")[0] / self.a)
         for i, frames_container in enumerate(self.frames_containers):
             if not hasattr(self, frames_container):
                 setattr(self, frames_container, [])
@@ -153,9 +168,9 @@ if __name__ == "__main__":
                                       c_1=0.1, c_2=0.1, c_12=0.1,
                                       d_1=0.0, d_2=0.2,
                                       cnt=301, a=1)
-    chain_chain.specify_initial_and_boundary(beta=0.035, n_0=-70, u_0=1, omega=np.sqrt(0.4))
+    chain_chain.specify_initial_and_boundary(beta=0.035, n_0=-70, u_0=1, omega_undim=0.99)
     chain_chain.plot_field(field="energy_field_undim", title="Энергия",
                            x_label=r"$n$", y_label=r"$2e_n \;/\; \left(m_1U_0^2\Omega^2\right)$")
-    chain_chain.solve(dt=0.05, t_max=400, save_time=15)
+    chain_chain.solve(dt=0.05, t_max=800, save_time=15)
     chain_chain.plot_field(field="energy_field_undim", title="Энергия",
                            x_label=r"$n$", y_label=r"$2e_n \;/\; \left(m_1U_0^2\Omega^2\right)$")
