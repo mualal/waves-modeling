@@ -1,4 +1,6 @@
+.DS_Store
 .idea
 venv
+animations
 __pycache__
 draft.py

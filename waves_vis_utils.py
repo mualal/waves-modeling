@@ -12,7 +12,7 @@ def monitor_energy(structure: ChainChainStructure | LatticeLatticeStructure):
              label="В левой решётке")
     plt.plot(getattr(structure, "time_undim_frames"), getattr(structure, "energy_right_undim_frames"),
              label="В правой решётке")
-    plt.xlabel(r"$g_1t/a$")
+    plt.xlabel(r"$g_1t/\left(n_0\,a\right)$")
     plt.ylabel(r"$\sum_{n}{2e_n \,/\, \left(m_1U_0^2\Omega^2\right)}$")
     plt.title("Энергия в системе")
     plt.grid()
@@ -20,12 +20,13 @@ def monitor_energy(structure: ChainChainStructure | LatticeLatticeStructure):
     plt.show()
 
 
-def lattices_animation(structure: LatticeLatticeStructure,
-                       field="energy_field_undim",
-                       title="Энергия",
-                       x_label="n",
-                       y_label="m",
-                       cbar_label=r"$2e_{n,m} \;/\; \left(m_1U_0^2\Omega^2\right)$"):
+def animate_lattices(structure: LatticeLatticeStructure,
+                     field="energy_field_undim",
+                     title="Энергия",
+                     x_label="n",
+                     y_label="m",
+                     cbar_label=r"$2e_{n,m} \;/\; \left(m_1U_0^2\Omega^2\right)$",
+                     save=False):
     plt.rcParams["animation.html"] = "jshtml"
     plt.rcParams['figure.dpi'] = 150
     plt.ioff()
@@ -33,7 +34,7 @@ def lattices_animation(structure: LatticeLatticeStructure,
     cur_field_frames = getattr(structure, field + "_frames")
     fig, ax = plt.subplots()
     levels = np.linspace(cur_field_frames[0].min(), cur_field_frames[0].max(), 100)
-    #levels = np.linspace(0, 0.1, 100)
+    #levels = np.linspace(0, 0.01, 10)
     ax.plot([0] * structure.coords_y.shape[0], structure.coords_y[:, 0], linestyle="dashed", color="red", linewidth=1)
     cf = ax.contourf(structure.coords_x, structure.coords_y, cur_field_frames[0], levels=levels)
     cbar = fig.colorbar(cf, ticks=np.linspace(0, cur_field_frames[0].max(), 10), label=cbar_label, ax=ax)
@@ -56,25 +57,35 @@ def lattices_animation(structure: LatticeLatticeStructure,
         plt.xlabel(x_label)
         plt.ylabel(y_label)
         levels = np.linspace(cur_field_frames[frame].min(), cur_field_frames[frame].max(), 100)
+        #levels = np.linspace(0, 0.01, 10)
         cf = ax.contourf(structure.coords_x, structure.coords_y, cur_field_frames[frame], levels=levels)
         cbar = fig.colorbar(cf, ticks=np.linspace(0, cur_field_frames[frame].max(), 10), label=cbar_label, ax=ax)
         return cf,
 
     anim = animation.FuncAnimation(fig, update, frames=len(cur_field_frames))
+    if save:
+        with open("animations/anim_num.txt", "r+") as f:
+            n = int(f.read().strip())
+            anim.save(f"animations/a{str(n).rjust(4, '0')}.gif")
+            f.seek(0)
+            f.write(str(n + 1))
     plt.show()
 
 
-def chains_animation(structure: ChainChainStructure,
-                     field="energy_field_undim",
-                     title="Энергия",
-                     x_label=r"$n$",
-                     y_label=r"$2e_n \;/\; \left(m_1U_0^2\Omega^2\right)$"):
+def animate_chains(structure: ChainChainStructure,
+                   field="energy_field_undim",
+                   title="Энергия",
+                   x_label=r"$n$",
+                   y_label=r"$2e_n \;/\; \left(m_1U_0^2\Omega^2\right)$",
+                   save=False):
     plt.rcParams["animation.html"] = "jshtml"
     plt.rcParams['figure.dpi'] = 150
     plt.ioff()
 
     cur_field_frames = getattr(structure, field + "_frames")
     fig, ax = plt.subplots()
+    ax.set_ylim((0.9 * min(cur_field_frames[0]), 1.1 * max(cur_field_frames[0])))
+    #ax.set_ylim((0, 0.001))
     line1 = ax.plot(structure.coords, cur_field_frames[0])[0]
     plt.title(title)
     plt.xlabel(x_label)
@@ -83,9 +94,16 @@ def chains_animation(structure: ChainChainStructure,
 
     def update(frame):
         ax.set_ylim((0.9 * min(cur_field_frames[frame]), 1.1 * max(cur_field_frames[frame])))
+        #ax.set_ylim((0, 0.001))
         line1.set_xdata(structure.coords)
         line1.set_ydata(cur_field_frames[frame])
         return line1,
 
     anim = animation.FuncAnimation(fig, update, frames=len(cur_field_frames))
+    if save:
+        with open("animations/anim_num.txt", "r+") as f:
+            n = int(f.read().strip())
+            anim.save(f"animations/a{str(n).rjust(4, '0')}.gif")
+            f.seek(0)
+            f.write(str(n + 1))
     plt.show()

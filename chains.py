@@ -20,9 +20,11 @@ class ChainChainStructure:
         self.disp = np.zeros(cnt)
         self.vel = np.zeros(cnt)
 
-    def specify_initial_and_boundary(self, beta, n_0, u_0, omega=None, omega_undim=None):
+    def specify_initial_and_boundary(self, beta, u_0, n_0=None, omega=None, omega_undim=None):
         if omega_undim is not None:
             omega = np.sqrt(self.omega_low ** 2 + omega_undim ** 2 * (self.omega_high ** 2 - self.omega_low ** 2))
+        if n_0 is None:
+            n_0 = -3 / beta
         for i in (0, -1):
             omega_min = np.sqrt(self.foundation_stiffnesses[i] / self.masses[i])
             omega_max = np.sqrt((4 * self.stiffnesses[i] + self.foundation_stiffnesses[i]) / self.masses[i])
@@ -34,6 +36,8 @@ class ChainChainStructure:
 
         setattr(self, "omega", omega)
         setattr(self, "u_0", u_0)
+        setattr(self, "beta", beta)
+        setattr(self, "n_0", n_0)
 
         expr = (omega ** 2 - self.foundation_stiffnesses / self.masses) / (4 * self.stiffnesses)
         k_1 = np.arcsin(np.sqrt(self.masses * expr)) * 2 / self.a
@@ -49,7 +53,15 @@ class ChainChainStructure:
         self.disp[np.where(self.indices >= -1)] = 0
         self.vel[np.where(self.indices >= -1)] = 0
 
-    def solve(self, dt, t_max, save_time, auto_stop=True):
+    def solve(self, dt=None, t_max=None, save_time=None, auto_stop=True):
+        if dt is None:
+            # dt = 0.05 / self.omega_high
+            dt = 0.05
+        if t_max is None:
+            t_max = 3 * abs(getattr(self, "n_0")) * self.a / getattr(self, "g_1")[0]
+        if save_time is None:
+            save_time = 15
+
         time_steps = np.arange(0, t_max, dt)
         for t in tqdm(time_steps):
             # leapfrog synchronized form
@@ -66,6 +78,7 @@ class ChainChainStructure:
             if t % save_time == 0:
                 self.save_history(t)
 
+            # autostop
             if auto_stop:
                 interface_energy = getattr(self, "energy_interface_undim_frames", None)
                 if interface_energy and interface_energy[-1] < max(interface_energy) / 1e3:
@@ -156,7 +169,9 @@ class ChainChainStructure:
         plt.title(title)
         plt.xlabel(x_label)
         plt.ylabel(y_label)
-        plt.grid()
+        plt.grid(linewidth=0.5)
+        plt.grid(which="minor", linestyle=":", linewidth=0.3)
+        plt.minorticks_on()
         plt.show()
 
     frames_containers = ["time_undim_frames", "disp_undim_frames", "vel_undim_frames", "energy_field_undim_frames",
@@ -167,7 +182,7 @@ class ChainChainStructure:
     frames_container_names = list(map(lambda s: s.replace("_frames", ""), frames_containers))
 
     def save_history(self, t):
-        setattr(self, "time_undim", t * getattr(self, "g_1")[0] / self.a)
+        setattr(self, "time_undim", t * getattr(self, "g_1")[0] / (abs(getattr(self, "n_0")) * self.a))
         for i, frames_container in enumerate(self.frames_containers):
             if not hasattr(self, frames_container):
                 setattr(self, frames_container, [])
@@ -177,9 +192,9 @@ class ChainChainStructure:
 if __name__ == "__main__":
     chain_chain = ChainChainStructure(m_1=0.5, m_2=1.0,
                                       c_1=0.1, c_2=0.1, c_12=0.1,
-                                      d_1=0.0, d_2=0.0,
-                                      cnt=301, a=1)
-    chain_chain.specify_initial_and_boundary(beta=0.035, n_0=-70, u_0=1, omega_undim=np.sqrt(0.5))
+                                      d_1=0.0, d_2=0.2,
+                                      cnt=601, a=1)
+    chain_chain.specify_initial_and_boundary(beta=0.02, u_0=1, omega_undim=np.sqrt(0.5))
     chain_chain.plot_field()
-    chain_chain.solve(dt=0.05, t_max=400, save_time=15, auto_stop=False)
+    chain_chain.solve(auto_stop=False)
     chain_chain.plot_field()

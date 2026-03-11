@@ -26,14 +26,20 @@ class LatticeLatticeStructure:
         self.vel = np.zeros(shape=(cnt_y, cnt_x))
 
     def specify_initial_and_boundary(self, gamma, beta_x, beta_y,
-                                     shift_x, shift_y, u_0, omega=None, omega_undim=None):
+                                     u_0, shift_x=None, shift_y=None, omega=None, omega_undim=None):
         setattr(self, "gamma", gamma)
 
         if omega_undim is not None:
             omega = np.sqrt(self.omega_low ** 2 + omega_undim ** 2 * (self.omega_high ** 2 - self.omega_low ** 2))
+        if shift_x is None:
+            shift_x = -3 / beta_x
+        if shift_y is None:
+            shift_y = -3 / beta_y
 
         setattr(self, "omega", omega)
         setattr(self, "u_0", u_0)
+        setattr(self, "beta_x", beta_x)
+        setattr(self, "shift_x", shift_x)
 
         k_1 = fsolve(lambda k: self.masses[0, 0] * omega ** 2 - self.foundation_stiffnesses[0, 0] -
                      4 * self.stiffnesses[0, 0] *
@@ -66,7 +72,16 @@ class LatticeLatticeStructure:
         self.disp[np.where(self.indices_x >= -1)] = 0
         self.vel[np.where(self.indices_x >= -1)] = 0
 
-    def solve(self, dt, t_max, save_time, auto_stop=True):
+    def solve(self, dt=None, t_max=None, save_time=None, auto_stop=True):
+        if dt is None:
+            # dt = 0.05 / self.omega_high
+            dt = 0.05
+        if t_max is None:
+            t_max = 3 * abs(getattr(self, "shift_x")) * self.a / \
+                    (getattr(self, "g_1")[0, 0] * cos(getattr(self, "gamma")))
+        if save_time is None:
+            save_time = 15
+
         time_steps = np.arange(0, t_max, dt)
         for t in tqdm(time_steps):
             # leapfrog synchronized form
@@ -195,14 +210,15 @@ class LatticeLatticeStructure:
     def zeta(self):
         gamma = getattr(self, "gamma")
         omega = getattr(self, "omega")
-        k_1 = fsolve(lambda k: self.masses[0, 0] * omega ** 2 - 4 * self.stiffnesses[0, 0] *
-                     (sin(cos(gamma) * k * self.a / 2) ** 2 +
-                      sin(sin(gamma) * k * self.a / 2) ** 2), np.ones(1))[0]
+        k_1 = fsolve(lambda k: self.masses[0, 0] * omega ** 2 - self.foundation_stiffnesses[0, 0] -
+                     4 * self.stiffnesses[0, 0] * (sin(cos(gamma) * k * self.a / 2) ** 2 +
+                                                   sin(sin(gamma) * k * self.a / 2) ** 2), np.ones(1))[0]
         k_1_y = k_1 * sin(gamma)
 
         k_2_y = k_1_y
-        k_2_x = fsolve(lambda k_x: self.masses[0, -1] * omega ** 2 - 4 * self.stiffnesses[0, -1] *
-                       (sin(k_x * self.a / 2) ** 2 + sin(k_2_y * self.a / 2) ** 2), np.array([0.5]))[0]
+        k_2_x = fsolve(lambda k_x: self.masses[0, -1] * omega ** 2 - self.foundation_stiffnesses[0, -1] -
+                       4 * self.stiffnesses[0, -1] * (sin(k_x * self.a / 2) ** 2 + sin(k_2_y * self.a / 2) ** 2),
+                       np.array([0.5]))[0]
         k_2 = np.sqrt(k_2_x ** 2 + k_2_y ** 2)
         zeta = np.arctan(k_2_y / k_2_x)
         return zeta, k_1, k_2
@@ -222,7 +238,7 @@ class LatticeLatticeStructure:
         ax.set_aspect("equal", adjustable="box")
 
         # ax.plot(self.coords_x[0][np.where(self.coords_x[0] >= 0)],
-        #        np.add(np.tan(self.zeta[0]) * self.coords_x[0][np.where(self.coords_x[0] >= 0)], -70),
+        #        np.add(np.tan(self.zeta[0]) * self.coords_x[0][np.where(self.coords_x[0] >= 0)], -20),
         #        linestyle="dashed", color="orange", linewidth=1)
 
         plt.show()
@@ -235,7 +251,7 @@ class LatticeLatticeStructure:
     frames_container_names = list(map(lambda s: s.replace("_frames", ""), frames_containers))
 
     def save_history(self, t):
-        setattr(self, "time_undim", t * getattr(self, "g_1")[0, 0] / self.a)
+        setattr(self, "time_undim", t * getattr(self, "g_1")[0, 0] / (abs(getattr(self, "shift_x")) * self.a))
         for i, frames_container in enumerate(self.frames_containers):
             if not hasattr(self, frames_container):
                 setattr(self, frames_container, [])
@@ -245,10 +261,10 @@ class LatticeLatticeStructure:
 if __name__ == "__main__":
     lattice_lattice = LatticeLatticeStructure(m_1=0.5, m_2=1.0,
                                               c_1=0.1, c_2=0.1, c_12=0.1,
-                                              d_1=0.0, d_2=0.0,
-                                              cnt_x=301, cnt_y=301, a=1)
-    lattice_lattice.specify_initial_and_boundary(gamma=np.radians(0), beta_x=0.035, beta_y=0.035,
-                                                 shift_x=-70, shift_y=-35, u_0=1, omega_undim=np.sqrt(0.5))
+                                              d_1=0.0, d_2=0.2,
+                                              cnt_x=601, cnt_y=601, a=1)
+    lattice_lattice.specify_initial_and_boundary(gamma=np.radians(0), beta_x=0.02, beta_y=0.02,
+                                                 u_0=1, omega_undim=np.sqrt(0.5))
     lattice_lattice.plot_field()
-    lattice_lattice.solve(dt=0.05, t_max=400, save_time=15, auto_stop=False)
+    lattice_lattice.solve(auto_stop=False)
     lattice_lattice.plot_field()
