@@ -1,4 +1,6 @@
 import numpy as np
+import numba as nb
+from numba_progress import ProgressBar
 from tqdm import tqdm
 from copy import deepcopy
 import matplotlib.pyplot as plt
@@ -53,7 +55,7 @@ class ChainChainStructure:
         self.disp[np.where(self.indices >= -1)] = 0
         self.vel[np.where(self.indices >= -1)] = 0
 
-    def solve(self, dt=None, t_max=None, save_time=None, auto_stop=True):
+    def solve(self, dt=None, t_max=None, save_time=None, auto_stop=True, accelerate=False):
         if dt is None:
             # dt = 0.05 / self.omega_high
             dt = 0.05
@@ -63,26 +65,31 @@ class ChainChainStructure:
             save_time = 15
 
         time_steps = np.arange(0, t_max, dt)
-        for t in tqdm(time_steps):
-            # leapfrog synchronized form
-            acc1 = (self.stiffnesses / self.masses) * (np.roll(self.disp, -1) - self.disp) + \
-                (np.roll(self.stiffnesses, 1) / self.masses) * (np.roll(self.disp, 1) - self.disp) - \
-                self.foundation_stiffnesses / self.masses * self.disp
-            self.disp += self.vel * dt + 1 / 2 * acc1 * dt ** 2
-            acc2 = (self.stiffnesses / self.masses) * (np.roll(self.disp, -1) - self.disp) + \
-                (np.roll(self.stiffnesses, 1) / self.masses) * (np.roll(self.disp, 1) - self.disp) - \
-                self.foundation_stiffnesses / self.masses * self.disp
-            self.vel += 1 / 2 * (acc1 + acc2) * dt
+        if accelerate:
+            with ProgressBar(total=len(time_steps)) as progress:
+                self.disp, self.vel = numba_accelerate(dt, time_steps, self.masses, self.disp, self.vel,
+                                                       self.stiffnesses, self.foundation_stiffnesses, progress)
+        else:
+            for t in tqdm(time_steps):
+                # leapfrog synchronized form
+                acc1 = (self.stiffnesses / self.masses) * (np.roll(self.disp, -1) - self.disp) + \
+                    (np.roll(self.stiffnesses, 1) / self.masses) * (np.roll(self.disp, 1) - self.disp) - \
+                    self.foundation_stiffnesses / self.masses * self.disp
+                self.disp += self.vel * dt + 1 / 2 * acc1 * dt ** 2
+                acc2 = (self.stiffnesses / self.masses) * (np.roll(self.disp, -1) - self.disp) + \
+                    (np.roll(self.stiffnesses, 1) / self.masses) * (np.roll(self.disp, 1) - self.disp) - \
+                    self.foundation_stiffnesses / self.masses * self.disp
+                self.vel += 1 / 2 * (acc1 + acc2) * dt
 
-            # save results
-            if t % save_time == 0:
-                self.save_history(t)
+                # save results
+                if t % save_time == 0:
+                    self.save_history(t)
 
-            # autostop
-            if auto_stop:
-                interface_energy = getattr(self, "energy_interface_undim_frames", None)
-                if interface_energy and interface_energy[-1] < max(interface_energy) / 1e3:
-                    break
+                # autostop
+                if auto_stop:
+                    interface_energy = getattr(self, "energy_interface_undim_frames", None)
+                    if interface_energy and interface_energy[-1] < max(interface_energy) / 1e3:
+                        break
 
     @property
     def energy_field(self):
@@ -189,6 +196,23 @@ class ChainChainStructure:
             getattr(self, frames_container).append(deepcopy(getattr(self, self.frames_container_names[i])))
 
 
+@nb.jit(nopython=True, nogil=True)
+def numba_accelerate(dt, time_steps, masses, disp, vel,
+                     stiffnesses, foundation_stiffnesses, progress_proxy):
+    for t in time_steps:
+        # leapfrog synchronized form
+        acc1 = (stiffnesses / masses) * (np.roll(disp, -1) - disp) + \
+               (np.roll(stiffnesses, 1) / masses) * (np.roll(disp, 1) - disp) - \
+               foundation_stiffnesses / masses * disp
+        disp += vel * dt + 1 / 2 * acc1 * dt ** 2
+        acc2 = (stiffnesses / masses) * (np.roll(disp, -1) - disp) + \
+               (np.roll(stiffnesses, 1) / masses) * (np.roll(disp, 1) - disp) - \
+            foundation_stiffnesses / masses * disp
+        vel += 1 / 2 * (acc1 + acc2) * dt
+        progress_proxy.update(1)
+    return disp, vel
+
+
 if __name__ == "__main__":
     chain_chain = ChainChainStructure(m_1=0.5, m_2=1.0,
                                       c_1=0.1, c_2=0.1, c_12=0.1,
@@ -196,5 +220,5 @@ if __name__ == "__main__":
                                       cnt=601, a=1)
     chain_chain.specify_initial_and_boundary(beta=0.02, u_0=1, omega_undim=np.sqrt(0.5))
     chain_chain.plot_field()
-    chain_chain.solve(auto_stop=False)
+    chain_chain.solve(auto_stop=False, accelerate=True)
     chain_chain.plot_field()
