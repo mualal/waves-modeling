@@ -88,8 +88,8 @@ class LatticeLatticeStructure:
         time_steps = np.arange(0, t_max, dt)
         if accelerate:
             with ProgressBar(total=len(time_steps)) as progress:
-                self.disp, self.vel = numba_accelerate(dt, time_steps, self.masses, self.disp, self.vel,
-                                                       self.stiffnesses, self.foundation_stiffnesses, progress)
+                self.disp, self.vel = numba_accelerate_2(dt, time_steps, self.masses, self.disp, self.vel,
+                                                         self.stiffnesses, self.foundation_stiffnesses, progress)
         else:
             for t in tqdm(time_steps):
                 # leapfrog synchronized form
@@ -296,7 +296,7 @@ class LatticeLatticeStructure:
             getattr(self, frames_container).append(deepcopy(getattr(self, self.frames_container_names[i])))
 
 
-@nb.jit(nopython=True, nogil=True, inline="always")
+@nb.jit(nopython=True, nogil=True, inline="always", parallel=True)
 def disp_neighbors(disp, stiff):
     disp_m1_1 = np.concatenate((disp[:, 1:], disp[:, :1]), axis=1)
     disp_p1_0 = np.concatenate((disp[-1:, :], disp[:-1, :]), axis=0)
@@ -306,8 +306,8 @@ def disp_neighbors(disp, stiff):
     return disp_m1_1, disp_p1_0, disp_p1_1, disp_m1_0, stiff_p1_1
 
 
-@nb.jit(nopython=True, nogil=True)
-def numba_accelerate(dt, time_steps, masses, disp, vel, stiffnesses, foundation_stiffnesses, progress_proxy):
+@nb.jit(nopython=True, nogil=True, parallel=True)
+def numba_accelerate_1(dt, time_steps, masses, disp, vel, stiffnesses, foundation_stiffnesses, progress_proxy):
     for t in time_steps:
         disp_m1_1, disp_p1_0, disp_p1_1, disp_m1_0, stiff_p1_1 = disp_neighbors(disp, stiffnesses)
         # leapfrog synchronized form
@@ -326,6 +326,34 @@ def numba_accelerate(dt, time_steps, masses, disp, vel, stiffnesses, foundation_
     return disp, vel
 
 
+@nb.jit(nopython=True, nogil=True)
+def numba_accelerate_2(dt, time_steps, masses, disp, vel,
+                       stiff, foundation_stiffnesses, progress_proxy):
+    acc1 = np.zeros_like(disp)
+    acc2 = np.zeros_like(disp)
+    n = len(disp[0])
+    m = len(disp)
+    for t in time_steps:
+        for i in range(m):
+            for j in range(n):
+                acc1[i, j] = (stiff[i, j] / masses[i, j]) * (disp[i, (j + 1) % n] + disp[i - 1, j] - 2 * disp[i, j]) + \
+                             (stiff[i, j - 1] / masses[i, j]) * (disp[i, j - 1] + disp[(i + 1) % m, j] - 2 * disp[i, j])
+                acc1[i, j] -= foundation_stiffnesses[i, j] / masses[i, j] * disp[i, j]
+
+        for i in range(m):
+            for j in range(n):
+                disp[i, j] += vel[i, j] * dt + 1 / 2 * acc1[i, j] * dt ** 2
+
+        for i in range(m):
+            for j in range(n):
+                acc2[i, j] = (stiff[i, j] / masses[i, j]) * (disp[i, (j + 1) % n] + disp[i - 1, j] - 2 * disp[i, j]) + \
+                             (stiff[i, j - 1] / masses[i, j]) * (disp[i, j - 1] + disp[(i + 1) % m, j] - 2 * disp[i, j])
+                acc2[i, j] -= foundation_stiffnesses[i, j] / masses[i, j] * disp[i, j]
+                vel[i, j] += 1 / 2 * (acc1[i, j] + acc2[i, j]) * dt
+        progress_proxy.update(1)
+    return disp, vel
+
+
 if __name__ == "__main__":
     lattice_lattice = LatticeLatticeStructure(m_1=0.5, m_2=1.0,
                                               c_1=0.1, c_2=0.1, c_12=0.1,
@@ -334,5 +362,5 @@ if __name__ == "__main__":
     lattice_lattice.specify_initial_and_boundary(gamma=np.radians(0), beta_x=0.02, beta_y=0.02,
                                                  u_0=1, omega_undim=np.sqrt(0.5))
     lattice_lattice.plot_field()
-    lattice_lattice.solve(auto_stop=False)
+    lattice_lattice.solve(auto_stop=False, accelerate=True)
     lattice_lattice.plot_field()
