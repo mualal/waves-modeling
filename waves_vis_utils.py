@@ -15,7 +15,9 @@ def monitor_energy(structure: ChainChainStructure | LatticeLatticeStructure):
     plt.xlabel(r"$g_1t/\left(n_0\,a\right)$")
     plt.ylabel(r"$\sum_{n}{2e_n \,/\, \left(m_1U_0^2\Omega^2\right)}$")
     plt.title("Энергия в системе")
-    plt.grid()
+    plt.grid(linewidth=0.5)
+    plt.grid(which="minor", linestyle=":", linewidth=0.3)
+    plt.minorticks_on()
     plt.legend()
     plt.show()
 
@@ -34,7 +36,7 @@ def animate_lattices(structure: LatticeLatticeStructure,
     cur_field_frames = getattr(structure, field + "_frames")
     fig, ax = plt.subplots()
     levels = np.linspace(cur_field_frames[0].min(), cur_field_frames[0].max(), 100)
-    #levels = np.linspace(0, 0.01, 10)
+    # levels = np.linspace(0, 0.01, 10)
     ax.plot([0] * structure.coords_y.shape[0], structure.coords_y[:, 0], linestyle="dashed", color="red", linewidth=1)
     cf = ax.contourf(structure.coords_x, structure.coords_y, cur_field_frames[0], levels=levels)
     cbar = fig.colorbar(cf, ticks=np.linspace(0, cur_field_frames[0].max(), 10), label=cbar_label, ax=ax)
@@ -57,7 +59,7 @@ def animate_lattices(structure: LatticeLatticeStructure,
         plt.xlabel(x_label)
         plt.ylabel(y_label)
         levels = np.linspace(cur_field_frames[frame].min(), cur_field_frames[frame].max(), 100)
-        #levels = np.linspace(0, 0.01, 10)
+        # levels = np.linspace(0, 0.01, 10)
         cf = ax.contourf(structure.coords_x, structure.coords_y, cur_field_frames[frame], levels=levels)
         cbar = fig.colorbar(cf, ticks=np.linspace(0, cur_field_frames[frame].max(), 10), label=cbar_label, ax=ax)
         return cf,
@@ -84,8 +86,10 @@ def animate_chains(structure: ChainChainStructure,
 
     cur_field_frames = getattr(structure, field + "_frames")
     fig, ax = plt.subplots()
-    ax.set_ylim((0.9 * min(cur_field_frames[0]), 1.1 * max(cur_field_frames[0])))
-    #ax.set_ylim((0, 0.001))
+    ax.set_ylim((0.9 * min([fr.min() for fr in cur_field_frames]),
+                 1.1 * max([fr.max() for fr in cur_field_frames])))
+    # ax.set_ylim((0.9 * min(cur_field_frames[0]), 1.1 * max(cur_field_frames[0])))
+    # ax.set_ylim((0, 0.001))
     line1 = ax.plot(structure.coords, cur_field_frames[0])[0]
     plt.title(title)
     plt.xlabel(x_label)
@@ -93,8 +97,8 @@ def animate_chains(structure: ChainChainStructure,
     plt.grid()
 
     def update(frame):
-        ax.set_ylim((0.9 * min(cur_field_frames[frame]), 1.1 * max(cur_field_frames[frame])))
-        #ax.set_ylim((0, 0.001))
+        # ax.set_ylim((0.9 * min(cur_field_frames[frame]), 1.1 * max(cur_field_frames[frame])))
+        # ax.set_ylim((0, 0.001))
         line1.set_xdata(structure.coords)
         line1.set_ydata(cur_field_frames[frame])
         return line1,

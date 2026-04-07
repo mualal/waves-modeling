@@ -6,6 +6,7 @@ from tqdm import tqdm
 from copy import deepcopy
 import matplotlib.pyplot as plt
 from scipy.optimize import fsolve
+from scipy.ndimage import center_of_mass
 import sympy as sp
 from sympy import Symbol, Abs, I, exp, diff
 
@@ -32,15 +33,20 @@ class LatticeLatticeStructure:
         setattr(self, "gamma", gamma)
 
         if omega_undim is not None:
+            setattr(self, "omega_undim", omega_undim)
             omega = np.sqrt(self.omega_low ** 2 + omega_undim ** 2 * (self.omega_high ** 2 - self.omega_low ** 2))
+        else:
+            setattr(self, "omega_undim", np.sqrt((omega ** 2 - self.omega_low ** 2) /
+                                                 (self.omega_high ** 2 - self.omega_low ** 2)))
         if shift_x is None:
-            shift_x = -3 / beta_x
+            shift_x = -np.sqrt(((3 / beta_x) * cos(gamma)) ** 2 + ((3 / beta_y) * sin(gamma)) ** 2)
         if shift_y is None:
-            shift_y = -3 / beta_y
+            shift_y = 0
 
         setattr(self, "omega", omega)
         setattr(self, "u_0", u_0)
         setattr(self, "beta_x", beta_x)
+        setattr(self, "beta_y", beta_y)
         setattr(self, "shift_x", shift_x)
 
         k_1 = fsolve(lambda k: self.masses[0, 0] * omega ** 2 - self.foundation_stiffnesses[0, 0] -
@@ -54,9 +60,11 @@ class LatticeLatticeStructure:
                                    self.foundation_stiffnesses) / self.masses))
 
         setattr(self, "g_1", g_1)
-        print(self.omega_low)
-        print(self.omega_high)
-        print("Текущий k:", k_1)
+        print("Omega min:", self.omega_low)
+        print("Omega max:", self.omega_high)
+        print("Текущий k_1:", k_1)
+        setattr(self, "k_1", k_1)
+        print("Текущая g_1:", g_1[0, 0])
 
         self.disp = u_0 * np.exp(-beta_x ** 2 / 2 * (self.coords_x * cos(gamma) + self.coords_y * sin(gamma) -
                                                      shift_x * cos(gamma) - shift_y * sin(gamma)) ** 2)
@@ -72,22 +80,26 @@ class LatticeLatticeStructure:
                      beta_x ** 2 * g_1 / self.a * (self.coords_x * cos(gamma) + self.coords_y * sin(gamma) -
                                                    shift_x * cos(gamma) - shift_y * sin(gamma)) *
                      sin(k_1 * cos(gamma) * self.coords_x + k_1 * sin(gamma) * self.coords_y))
-        self.disp[np.where(self.indices_x >= -1)] = 0
-        self.vel[np.where(self.indices_x >= -1)] = 0
+        # self.disp[np.where(self.indices_x >= -1)] = 0
+        # self.vel[np.where(self.indices_x >= -1)] = 0
 
-    def solve(self, dt=None, t_max=None, save_time=None, auto_stop=True, accelerate=False):
+    def solve(self, dt=None, t_max=None, t_max_undim=None, save_time=None, auto_stop=True, accelerate=False):
         if dt is None:
             # dt = 0.05 / self.omega_high
             dt = 0.05
-        if t_max is None:
+        if t_max is None and t_max_undim is None:
             t_max = 3 * abs(getattr(self, "shift_x")) * self.a / \
                     (getattr(self, "g_1")[0, 0] * cos(getattr(self, "gamma")))
+        if t_max_undim is not None:
+            t_max = t_max_undim * abs(getattr(self, "shift_x")) * self.a / \
+                    (getattr(self, "g_1")[0, 0] * cos(getattr(self, "gamma")))
+
         if save_time is None:
             save_time = 15
 
         time_steps = np.arange(0, t_max, dt)
         if accelerate:
-            with ProgressBar(total=len(time_steps)) as progress:
+            with ProgressBar(total=len(time_steps), update_interval=10) as progress:
                 self.disp, self.vel = numba_accelerate_2(dt, time_steps, self.masses, self.disp, self.vel,
                                                          self.stiffnesses, self.foundation_stiffnesses, progress)
         else:
@@ -96,17 +108,19 @@ class LatticeLatticeStructure:
                 acc1 = (self.stiffnesses / self.masses) * (np.roll(self.disp, -1, axis=1) +
                                                            np.roll(self.disp, 1, axis=0) -
                                                            2 * self.disp) + \
-                       (np.roll(self.stiffnesses, 1, axis=1) / self.masses) * (np.roll(self.disp, 1, axis=1) +
-                                                                               np.roll(self.disp, -1, axis=0) -
-                                                                               2 * self.disp)
+                       (np.roll(self.stiffnesses, 1, axis=1) / self.masses) * (np.roll(self.disp, 1, axis=1) -
+                                                                               self.disp) + \
+                       (np.roll(self.stiffnesses, -1, axis=0) / self.masses) * (np.roll(self.disp, -1, axis=0) -
+                                                                                self.disp)
                 acc1 -= self.foundation_stiffnesses / self.masses * self.disp
                 self.disp += self.vel * dt + 1 / 2 * acc1 * dt ** 2
                 acc2 = (self.stiffnesses / self.masses) * (np.roll(self.disp, -1, axis=1) +
                                                            np.roll(self.disp, 1, axis=0) -
                                                            2 * self.disp) + \
-                       (np.roll(self.stiffnesses, 1, axis=1) / self.masses) * (np.roll(self.disp, 1, axis=1) +
-                                                                               np.roll(self.disp, -1, axis=0) -
-                                                                               2 * self.disp)
+                       (np.roll(self.stiffnesses, 1, axis=1) / self.masses) * (np.roll(self.disp, 1, axis=1) -
+                                                                               self.disp) + \
+                       (np.roll(self.stiffnesses, -1, axis=0) / self.masses) * (np.roll(self.disp, -1, axis=0) -
+                                                                                self.disp)
                 acc2 -= self.foundation_stiffnesses / self.masses * self.disp
                 self.vel += 1 / 2 * (acc1 + acc2) * dt
 
@@ -173,40 +187,52 @@ class LatticeLatticeStructure:
         k_1_x = k_1 * cos(gamma)
         k_2_x = k_2 * cos(theta)
 
-        k = Symbol("k")
-        g_1 = diff(sp.sqrt((4 * self.stiffnesses[0, 0] * (sp.sin(k * cos(gamma) * self.a / 2) ** 2 +
-                            sp.sin(k * sin(gamma) * self.a / 2) ** 2) +
-                            self.foundation_stiffnesses[0, 0]) / self.masses[0, 0]), k).evalf(subs={k: k_1})
+        # k = Symbol("k")
+        # g_1 = diff(sp.sqrt((4 * self.stiffnesses[0, 0] * (sp.sin(k * cos(gamma) * self.a / 2) ** 2 +
+        #                     sp.sin(k * sin(gamma) * self.a / 2) ** 2) +
+        #                     self.foundation_stiffnesses[0, 0]) / self.masses[0, 0]), k).evalf(subs={k: k_1})
+        g_1 = 4 * self.stiffnesses[0, 0] * \
+            (cos(gamma) * self.a / 2 * sin(k_1 * cos(gamma) * self.a / 2) * cos(k_1 * cos(gamma) * self.a / 2) +
+             sin(gamma) * self.a / 2 * sin(k_1 * sin(gamma) * self.a / 2) * cos(k_1 * sin(gamma) * self.a / 2)) / \
+            (self.masses[0, 0] * np.sqrt((4 * self.stiffnesses[0, 0] * (sin(k_1 * cos(gamma) * self.a / 2)) ** 2 +
+                                          4 * self.stiffnesses[0, 0] * (sin(k_1 * sin(gamma) * self.a / 2)) ** 2 +
+                                          self.foundation_stiffnesses[0, 0]) / self.masses[0, 0]))
         g_1_x = g_1 * np.cos(gamma)
         g_1_y = g_1 * np.sin(gamma)
-        g_2 = diff(sp.sqrt((4 * self.stiffnesses[0, -1] * (sp.sin(k * cos(theta) * self.a / 2) ** 2 +
-                            sp.sin(k * sin(theta) * self.a / 2) ** 2) +
-                            self.foundation_stiffnesses[0, -1]) / self.masses[0, -1]), k).evalf(subs={k: k_2})
+        # g_2 = diff(sp.sqrt((4 * self.stiffnesses[0, -1] * (sp.sin(k * cos(theta) * self.a / 2) ** 2 +
+        #                     sp.sin(k * sin(theta) * self.a / 2) ** 2) +
+        #                     self.foundation_stiffnesses[0, -1]) / self.masses[0, -1]), k).evalf(subs={k: k_2})
+        g_2 = 4 * self.stiffnesses[0, -1] * \
+            (cos(theta) * self.a / 2 * sin(k_2 * cos(theta) * self.a / 2) * cos(k_2 * cos(theta) * self.a / 2) +
+             sin(theta) * self.a / 2 * sin(k_2 * sin(theta) * self.a / 2) * cos(k_2 * sin(theta) * self.a / 2)) / \
+            (self.masses[0, -1] * np.sqrt((4 * self.stiffnesses[0, -1] * (sin(k_2 * cos(theta) * self.a / 2)) ** 2 +
+                                           4 * self.stiffnesses[0, -1] * (sin(k_2 * sin(theta) * self.a / 2)) ** 2 +
+                                           self.foundation_stiffnesses[0, -1]) / self.masses[0, -1]))
         g_2_x = g_2 * np.cos(theta)
         g_2_y = g_2 * np.sin(theta)
 
-        amp_frac = (exp(I * k_1_x * self.a) - exp(-I * k_1_x * self.a)) / \
-                   (exp(I * k_2_x * self.a) - exp(-I * k_1_x * self.a))
+        # amp_frac = (exp(-I * k_1_x * self.a) - exp(I * k_1_x * self.a)) / \
+        #            (exp(-I * k_2_x * self.a) - exp(I * k_1_x * self.a))
+
+        # amp_frac = (2 * sp.sin(k_1_x * self.a) /
+        #             (sp.sin(k_1_x * self.a) + sp.sin(k_2_x * self.a))) * exp(I * k_2_x * self.a)
+
+        amp_frac = self.stiffnesses[0, 0] * (exp(-I * k_1_x * self.a) - exp(I * k_1_x * self.a)) / \
+            (self.stiffnesses[0, -1] * exp(-I * k_2_x * self.a) -
+             self.stiffnesses[0, 0] * exp(I * k_1_x * self.a) +
+             self.stiffnesses[0, 0] - self.stiffnesses[0, -1])
         amp_frac = amp_frac.evalf()
 
         trans_coeff = ((self.masses[0, -1] * g_2_x) /
                        (self.masses[0, 0] * g_1_x)) * (Abs(amp_frac)) ** 2
 
         # return Abs(amp_frac)
+
+        # из дисп. соотношения совпадает с отношением масс m_2 / m_1 (в случае одинаковых жёсткостей пружин)
+        # print(((sin(k_2 * self.a * cos(theta) / 2)) ** 2 + (sin(k_2 * self.a * sin(theta) / 2)) ** 2) /
+        #       ((sin(k_1 * self.a * cos(gamma) / 2)) ** 2 + (sin(k_1 * self.a * sin(gamma) / 2)) ** 2))
+
         return trans_coeff
-
-    @property
-    def adjustment_coeff(self):
-        gamma = getattr(self, "gamma")
-        theta, _, _ = self.theta
-        m_1, m_2 = self.masses[0, 0], self.masses[0, -1]
-        c_1, c_2 = self.stiffnesses[0, 0], self.stiffnesses[0, -1]
-        return ((np.sqrt(m_1 * c_1) * cos(gamma) + np.sqrt(m_2 * c_2) * cos(theta)) /
-                (np.sqrt(m_2 * c_2) * cos(gamma) + np.sqrt(m_1 * c_1) * cos(theta))) ** 2
-
-    @property
-    def transmission_coeff_analytical_adjustment(self):
-        return self.transmission_coeff_analytical * self.adjustment_coeff
 
     @property
     def transmission_coeff_continuum(self):
@@ -216,8 +242,9 @@ class LatticeLatticeStructure:
         c_1 = self.stiffnesses[0, 0]
         c_2 = self.stiffnesses[0, -1]
         theta = np.arcsin(np.sqrt(m_1 / m_2) * sin(gamma))
-        trans_coeff = (4 * cos(gamma) * cos(theta) / (np.sqrt(m_2) * np.sqrt(m_1))) / \
-                      (cos(gamma) / np.sqrt(m_1) + cos(theta) / np.sqrt(m_2)) ** 2
+        theta = theta if not np.isnan(theta) else np.pi / 2
+        trans_coeff = (4 * cos(gamma) * cos(theta) / (np.sqrt(c_1 * m_1) * np.sqrt(c_2 * m_2))) / \
+                      (cos(gamma) / np.sqrt(c_1 * m_1) + cos(theta) / np.sqrt(c_2 * m_2)) ** 2
         # return Abs(2 * (m_2 / m_1) * cos(gamma) / ((m_2 / m_1) * cos(gamma) + np.sqrt(m_2 / m_1) * cos(theta)))
         return trans_coeff
 
@@ -253,24 +280,48 @@ class LatticeLatticeStructure:
         k_1_y = k_1 * sin(gamma)
 
         k_2_y = k_1_y
-        k_2_x = fsolve(lambda k_x: self.masses[0, -1] * omega ** 2 - self.foundation_stiffnesses[0, -1] -
-                       4 * self.stiffnesses[0, -1] * (sin(k_x * self.a / 2) ** 2 + sin(k_2_y * self.a / 2) ** 2),
-                       np.array([0.5]))[0]
+        # k_2_x = fsolve(lambda k_x: self.masses[0, -1] * omega ** 2 - self.foundation_stiffnesses[0, -1] -
+        #                4 * self.stiffnesses[0, -1] * (sin(k_x * self.a / 2) ** 2 + sin(k_2_y * self.a / 2) ** 2),
+        #                np.array([0.5]))[0]
+        k_2_x = 2 / self.a * (np.arcsin(np.sqrt(
+            (self.masses[0, -1] * omega ** 2 - self.foundation_stiffnesses[0, -1]) / (4 * self.stiffnesses[0, -1]) -
+            (np.sin(k_2_y * self.a / 2)) ** 2)))
+        k_2_x = k_2_x if not np.isnan(k_2_x) else 1e-6
         k_2 = np.sqrt(k_2_x ** 2 + k_2_y ** 2)
-        theta = np.arctan(k_2_y / k_2_x)
+        theta = np.arctan2(k_2_y, k_2_x)
         return theta, k_1, k_2
+
+    @property
+    def theta_numerically(self):
+        cur_energy = self.energy_field_undim * (self.indices_x >= 0)
+        row1, col1 = center_of_mass(cur_energy)
+        dt = 0.05
+        t_max = 0.1 * abs(getattr(self, "shift_x")) * self.a / \
+            (getattr(self, "g_1")[0, 0] * cos(getattr(self, "gamma")))
+        self.disp, self.vel = numba_accelerate_2(dt, np.arange(0, t_max, dt), self.masses, self.disp, self.vel,
+                                                 self.stiffnesses, self.foundation_stiffnesses)
+        cur_energy = self.energy_field_undim * (self.indices_x >= 0)
+        row2, col2 = center_of_mass(cur_energy)
+        return np.arctan2(row1 - row2, col2 - col1)
 
     def plot_field(self, field="energy_field_undim", title="Энергия",
                    x_label="n", y_label="m", cbar_label=r"$2e_{n,m} \;/\; \left(m_1U_0^2\Omega^2\right)$"):
         cur_field = getattr(self, field)
-        #levels = np.linspace(cur_field.min(), cur_field.max(), 100)
+        # levels = np.linspace(cur_field.min(), cur_field.max(), 100)
         levels = np.linspace(0, 0.01, 10)
         fig, ax = plt.subplots()
         ax.plot([0] * self.coords_y.shape[0], self.coords_y[:, 0], linestyle="dashed", color="red", linewidth=1)
         cf = ax.contourf(self.coords_x, self.coords_y, cur_field, levels=levels)
         cbar = fig.colorbar(cf, ticks=np.linspace(0, cur_field.max(), 10), label=cbar_label, ax=ax)
         ax = plt.gca()
-        plt.title(f"{title} {cbar_label}")
+        plt.title(f"$\\left(m_1 / m_2 = {round(self.masses[0, 0] / self.masses[0, -1], 1)}"
+                  f";\\,c_1 / c_2 = {round(self.stiffnesses[0, 0] / self.stiffnesses[0, -1], 1)}"
+                  f";\\,\\Omega / \\Omega_{{max}} = {round(getattr(self, 'omega_undim'), 3)}"
+                  f";\\,k_1 \\approx {round(getattr(self, 'k_1'), 3)}"
+                  f";\\,g_1 \\approx {round(getattr(self, 'g_1')[0, 0], 3)}"
+                  f";\\,\\beta_x = {round(getattr(self, 'beta_x'), 3)}"
+                  f";\\,\\gamma = {np.round(np.degrees(getattr(self, 'gamma')), 1)}^{{\\circ}}"
+                  f"\\right)$")
         plt.xlabel(x_label)
         plt.ylabel(y_label)
         ax.set_aspect("equal", adjustable="box")
@@ -328,7 +379,7 @@ def numba_accelerate_1(dt, time_steps, masses, disp, vel, stiffnesses, foundatio
 
 @nb.jit(nopython=True, nogil=True)
 def numba_accelerate_2(dt, time_steps, masses, disp, vel,
-                       stiff, foundation_stiffnesses, progress_proxy):
+                       stiff, foundation_stiffnesses, progress_proxy=None):
     acc1 = np.zeros_like(disp)
     acc2 = np.zeros_like(disp)
     n = len(disp[0])
@@ -336,8 +387,10 @@ def numba_accelerate_2(dt, time_steps, masses, disp, vel,
     for t in time_steps:
         for i in range(m):
             for j in range(n):
-                acc1[i, j] = (stiff[i, j] / masses[i, j]) * (disp[i, (j + 1) % n] + disp[i - 1, j] - 2 * disp[i, j]) + \
-                             (stiff[i, j - 1] / masses[i, j]) * (disp[i, j - 1] + disp[(i + 1) % m, j] - 2 * disp[i, j])
+                acc1[i, j] = (stiff[i, j] / masses[i, j]) * (disp[i, (j + 1) % n] - disp[i, j]) + \
+                             (stiff[(i + 1) % m, j] / masses[i, j]) * (disp[(i + 1) % m, j] - disp[i, j]) + \
+                             (stiff[i, j] / masses[i, j]) * (disp[i - 1, j] - disp[i, j]) + \
+                             (stiff[i, j - 1] / masses[i, j]) * (disp[i, j - 1] - disp[i, j])
                 acc1[i, j] -= foundation_stiffnesses[i, j] / masses[i, j] * disp[i, j]
 
         for i in range(m):
@@ -346,11 +399,14 @@ def numba_accelerate_2(dt, time_steps, masses, disp, vel,
 
         for i in range(m):
             for j in range(n):
-                acc2[i, j] = (stiff[i, j] / masses[i, j]) * (disp[i, (j + 1) % n] + disp[i - 1, j] - 2 * disp[i, j]) + \
-                             (stiff[i, j - 1] / masses[i, j]) * (disp[i, j - 1] + disp[(i + 1) % m, j] - 2 * disp[i, j])
+                acc2[i, j] = (stiff[i, j] / masses[i, j]) * (disp[i, (j + 1) % n] - disp[i, j]) + \
+                             (stiff[(i + 1) % m, j] / masses[i, j]) * (disp[(i + 1) % m, j] - disp[i, j]) + \
+                             (stiff[i, j] / masses[i, j]) * (disp[i - 1, j] - disp[i, j]) + \
+                             (stiff[i, j - 1] / masses[i, j]) * (disp[i, j - 1] - disp[i, j])
                 acc2[i, j] -= foundation_stiffnesses[i, j] / masses[i, j] * disp[i, j]
                 vel[i, j] += 1 / 2 * (acc1[i, j] + acc2[i, j]) * dt
-        progress_proxy.update(1)
+        if progress_proxy is not None:
+            progress_proxy.update(1)
     return disp, vel
 
 
