@@ -184,38 +184,18 @@ class LatticeLatticeStructure:
     def transmission_coeff_analytical(self):
         gamma = getattr(self, "gamma")
         theta, k_1, k_2 = self.theta
-        k_1_x = k_1 * cos(gamma)
-        k_2_x = k_2 * cos(theta)
+        k_1_x, k_1_y = k_1 * cos(gamma), k_1 * sin(gamma)
+        k_2_x, k_2_y = k_2 * cos(theta), k_2 * sin(theta)
 
-        # k = Symbol("k")
-        # g_1 = diff(sp.sqrt((4 * self.stiffnesses[0, 0] * (sp.sin(k * cos(gamma) * self.a / 2) ** 2 +
-        #                     sp.sin(k * sin(gamma) * self.a / 2) ** 2) +
-        #                     self.foundation_stiffnesses[0, 0]) / self.masses[0, 0]), k).evalf(subs={k: k_1})
-        g_1 = 4 * self.stiffnesses[0, 0] * \
-            (cos(gamma) * self.a / 2 * sin(k_1 * cos(gamma) * self.a / 2) * cos(k_1 * cos(gamma) * self.a / 2) +
-             sin(gamma) * self.a / 2 * sin(k_1 * sin(gamma) * self.a / 2) * cos(k_1 * sin(gamma) * self.a / 2)) / \
-            (self.masses[0, 0] * np.sqrt((4 * self.stiffnesses[0, 0] * (sin(k_1 * cos(gamma) * self.a / 2)) ** 2 +
-                                          4 * self.stiffnesses[0, 0] * (sin(k_1 * sin(gamma) * self.a / 2)) ** 2 +
+        g_1_x = 2 * self.a * self.stiffnesses[0, 0] * sin(k_1_x * self.a / 2) * cos(k_1_x * self.a / 2) / \
+            (self.masses[0, 0] * np.sqrt((4 * self.stiffnesses[0, 0] * (sin(k_1_x * self.a / 2)) ** 2 +
+                                          4 * self.stiffnesses[0, 0] * (sin(k_1_y * self.a / 2)) ** 2 +
                                           self.foundation_stiffnesses[0, 0]) / self.masses[0, 0]))
-        g_1_x = g_1 * np.cos(gamma)
-        g_1_y = g_1 * np.sin(gamma)
-        # g_2 = diff(sp.sqrt((4 * self.stiffnesses[0, -1] * (sp.sin(k * cos(theta) * self.a / 2) ** 2 +
-        #                     sp.sin(k * sin(theta) * self.a / 2) ** 2) +
-        #                     self.foundation_stiffnesses[0, -1]) / self.masses[0, -1]), k).evalf(subs={k: k_2})
-        g_2 = 4 * self.stiffnesses[0, -1] * \
-            (cos(theta) * self.a / 2 * sin(k_2 * cos(theta) * self.a / 2) * cos(k_2 * cos(theta) * self.a / 2) +
-             sin(theta) * self.a / 2 * sin(k_2 * sin(theta) * self.a / 2) * cos(k_2 * sin(theta) * self.a / 2)) / \
-            (self.masses[0, -1] * np.sqrt((4 * self.stiffnesses[0, -1] * (sin(k_2 * cos(theta) * self.a / 2)) ** 2 +
-                                           4 * self.stiffnesses[0, -1] * (sin(k_2 * sin(theta) * self.a / 2)) ** 2 +
+
+        g_2_x = 2 * self.a * self.stiffnesses[0, -1] * sin(k_2_x * self.a / 2) * cos(k_2_x * self.a / 2) / \
+            (self.masses[0, -1] * np.sqrt((4 * self.stiffnesses[0, -1] * (sin(k_2_x * self.a / 2)) ** 2 +
+                                           4 * self.stiffnesses[0, -1] * (sin(k_2_y * self.a / 2)) ** 2 +
                                            self.foundation_stiffnesses[0, -1]) / self.masses[0, -1]))
-        g_2_x = g_2 * np.cos(theta)
-        g_2_y = g_2 * np.sin(theta)
-
-        # amp_frac = (exp(-I * k_1_x * self.a) - exp(I * k_1_x * self.a)) / \
-        #            (exp(-I * k_2_x * self.a) - exp(I * k_1_x * self.a))
-
-        # amp_frac = (2 * sp.sin(k_1_x * self.a) /
-        #             (sp.sin(k_1_x * self.a) + sp.sin(k_2_x * self.a))) * exp(I * k_2_x * self.a)
 
         amp_frac = self.stiffnesses[0, 0] * (exp(-I * k_1_x * self.a) - exp(I * k_1_x * self.a)) / \
             (self.stiffnesses[0, -1] * exp(-I * k_2_x * self.a) -
@@ -225,12 +205,6 @@ class LatticeLatticeStructure:
 
         trans_coeff = ((self.masses[0, -1] * g_2_x) /
                        (self.masses[0, 0] * g_1_x)) * (Abs(amp_frac)) ** 2
-
-        # return Abs(amp_frac)
-
-        # из дисп. соотношения совпадает с отношением масс m_2 / m_1 (в случае одинаковых жёсткостей пружин)
-        # print(((sin(k_2 * self.a * cos(theta) / 2)) ** 2 + (sin(k_2 * self.a * sin(theta) / 2)) ** 2) /
-        #       ((sin(k_1 * self.a * cos(gamma) / 2)) ** 2 + (sin(k_1 * self.a * sin(gamma) / 2)) ** 2))
 
         return trans_coeff
 
@@ -292,7 +266,7 @@ class LatticeLatticeStructure:
         return theta, k_1, k_2
 
     @property
-    def theta_numerically(self):
+    def transmitted_energy_angle_numerically(self):
         cur_energy = self.energy_field_undim * (self.indices_x >= 0)
         row1, col1 = center_of_mass(cur_energy)
         dt = 0.05
@@ -305,7 +279,8 @@ class LatticeLatticeStructure:
         return np.arctan2(row1 - row2, col2 - col1)
 
     def plot_field(self, field="energy_field_undim", title="Энергия",
-                   x_label="n", y_label="m", cbar_label=r"$2e_{n,m} \;/\; \left(m_1U_0^2\Omega^2\right)$"):
+                   x_label="$n_x$", y_label="$n_y$", cbar_label=r"$2e_{n,m} \;/\; \left(m_1U_0^2\Omega^2\right)$"):
+        plt.rcParams['figure.figsize'] = (12, 5)
         cur_field = getattr(self, field)
         # levels = np.linspace(cur_field.min(), cur_field.max(), 100)
         levels = np.linspace(0, 0.01, 10)
